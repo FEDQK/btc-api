@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/smtp"
 	"os"
 )
 
@@ -13,11 +14,9 @@ type Subscriber struct {
 }
 
 type CurrencyResponse struct {
-	Bpi struct {
-		UAH struct {
-			Rate string `json:"rate"`
-		} `json:"UAH"`
-	} `json:"bpi"`
+	Bitcoin struct {
+		UAH float64 `json:"uah"`
+	} `json:"bitcoin"`
 }
 
 var subscribers []Subscriber
@@ -33,14 +32,35 @@ func init() {
 	}
 }
 
-func main() {
-	http.HandleFunc("/btc-to-uah", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-			return
-		}
+func sendEmail(to, subject, body string) error {
+	// Налаштування підключення до SMTP-сервера
+	smtpHost := "smtp.elasticemail.com"    // Адреса SMTP-сервера
+	smtpPort := 2525                    // Порт SMTP-сервера
+	smtpUsername := "vovanchikd1996@gmail.com"    // Ім'я користувача для аутентифікації
+	smtpPassword := "D313F79FA8B78B33E229D16B54D5FC618DDD"    // Пароль для аутентифікації
 
-		resp, err := http.Get("https://api.coindesk.com/v1/bpi/currentprice/BTC.json")
+	// Створення аутентифікаційних даних
+	auth := smtp.PlainAuth("", smtpUsername, smtpPassword, smtpHost)
+
+	// Формування повідомлення
+	msg := []byte("To: " + to + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"\r\n" +
+		body)
+
+	// Відправка повідомлення
+	err := smtp.SendMail(smtpHost+":"+fmt.Sprintf("%d", smtpPort), auth, smtpUsername, []string{to}, msg)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+
+func main() {
+	http.HandleFunc("/rate", func(w http.ResponseWriter, r *http.Request) {
+		resp, err := http.Get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=UAH")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -55,7 +75,7 @@ func main() {
 			return
 		}
 
-		fmt.Fprintf(w, "BTC to UAH rate: %s", currencyResponse.Bpi.UAH.Rate)
+		fmt.Fprintf(w, "BTC to UAH rate: %.2f", currencyResponse.Bitcoin.UAH)
 	})
 
 	http.HandleFunc("/subscribe", func(w http.ResponseWriter, r *http.Request) {
@@ -95,19 +115,19 @@ func main() {
 		fmt.Fprintf(w, "Subscribed successfully")
 	})
 
-	http.HandleFunc("/notify", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/sendEmails", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 			return
 		}
-
-		resp, err := http.Get("https://api.coindesk.com/v1/bpi/currentprice/BTC.json")
+	
+		resp, err := http.Get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=UAH")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		defer resp.Body.Close()
-
+	
 		var currencyResponse CurrencyResponse
 		dec := json.NewDecoder(resp.Body)
 		err = dec.Decode(&currencyResponse)
@@ -115,13 +135,34 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		for _, subscriber := range subscribers {
-			fmt.Printf("Sending BTC to UAH rate (%s) to %s\n", currencyResponse.Bpi.UAH.Rate, subscriber.Email)
+	
+		data, err := ioutil.ReadFile("subscribers.json")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-
+	
+		err = json.Unmarshal(data, &subscribers)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	
+		rate := currencyResponse.Bitcoin.UAH
+		for _, subscriber := range subscribers {
+			fmt.Printf("Sending BTC to UAH rate (%.2f) to %s\n", rate, subscriber.Email)
+			subject := "BTC to UAH Rate Update"
+			body := fmt.Sprintf("The current BTC to UAH rate is: %.2f", rate)
+			err := sendEmail(subscriber.Email, subject, body)
+			if err != nil {
+				fmt.Printf("Failed to send email to %s: %v\n", subscriber.Email, err)
+				continue
+			}
+		}
+	
 		fmt.Fprintf(w, "Notifications sent")
 	})
+	
 
 	fmt.Println("Listening on port 8080")
 	http.ListenAndServe(":8080", nil)
