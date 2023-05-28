@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/FEDQK/btc-api/constants"
 	"github.com/FEDQK/btc-api/models"
 )
 
-func get(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=UAH")
+func Get(w http.ResponseWriter, r *http.Request) {
+	resp, err := http.Get(constants.PRICE_API_URL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
