@@ -59,24 +59,7 @@ func sendEmail(to, subject, body string) error {
 
 
 func main() {
-	http.HandleFunc("/rate", func(w http.ResponseWriter, r *http.Request) {
-		resp, err := http.Get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=UAH")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer resp.Body.Close()
-
-		var currencyResponse CurrencyResponse
-		dec := json.NewDecoder(resp.Body)
-		err = dec.Decode(&currencyResponse)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		fmt.Fprintf(w, "BTC to UAH rate: %.2f", currencyResponse.Bitcoin.UAH)
-	})
+	http.HandleFunc("/rate", rate.get)
 
 	http.HandleFunc("/subscribe", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
